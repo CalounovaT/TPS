@@ -69,7 +69,7 @@ rule hmmsearch:
     input:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
-        uniparc_chunk="uniparc_chunks/{chunk}"
+        uniparc_chunk="uniparc_chunks/uniparc_active.part_{chunk}.fasta"
     output:
         "hmm_results/hmm_{chunk}"
     log:

@@ -162,42 +162,6 @@ rule get_uniprot_data:
         """
         ./map.py {input} 2> {log}
         """
-#    run:
-#        """
-#        # create output directory
-#        #os.mkdir("uniprot_data")
-#        
-#        # load UPIs from file
-#        with open(input["upi_file"], "r") as input_handle:
-#            upis = [line.strip() for line in input_handle.readlines()]    
-#        upis_str = " ".join(upis)
-#        subprocess.run(['touch','upis_str_made'])
-#        # map the UPIs to Uniprot accessions
-#        params = {
-#        'from': 'UPARC',
-#        'to': 'ACC',
-#        'format': 'tab',
-#        'query': upis_str
-#        }
-#
-#        data = urllib.parse.urlencode(params)
-#        data = data.encode('utf-8')
-#        req = urllib.request.Request(url, data)
-#        with urllib.request.urlopen(req) as f:
-#            response = f.read()
-#        mapping = response.decode('utf-8')
-#
-#        accessions = [line.split('\t') for line in mapping.split('\n')]
-#        accessions = [id_entry[1] for id_entry in accessions if len(id_entry) == 2][1:] # skipping first elements since it contains header
-#        subprocess.run(['touch','accessions_made']
-#        # retrive the entries in format: id	organism	sequence
-#        url = 'uniprot.org/uniprot?format=tab&columns=id,organism,sequence&query=accession%3A' + accessions[0]
-#
-#	for entry in accessions[1:]:
-#            url += '+OR+accession%3A' + entry
-#
-#        subprocess.run(['wget','-O',output["uniprot_data"],url]
-#        """
 
 def aggregate_uniprot(wildcards):
     checkpoints_output = checkpoints.split_UPIs.get(**wildcards).output[0]

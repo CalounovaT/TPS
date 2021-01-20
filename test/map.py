@@ -17,7 +17,6 @@ with open(inp, 'r') as input_handle:
     upis = [line.strip() for line in input_handle.readlines()]
 
 upi_str = " ".join(upis[:7])
-print(upi_str)
 
 outp = os.path.join('uniprot','seq_' + os.path.basename(inp)[4:])
 
@@ -41,7 +40,6 @@ mapping = response.decode('utf-8')
 ids = [line.split('\t') for line in mapping.split('\n')]
 ids = [id_entry[1]  for id_entry in ids if len(id_entry) == 2][1:]
 
-print(ids)
 
 if len(ids) == 0:
     subprocess.run(['touch',outp])

@@ -16,7 +16,6 @@ rule all:
         "hmm_combined.out",
 	"upi.txt",
         "output.txt"
-       # "hmm_results"
 
 rule clean:
     shell:
@@ -68,7 +67,7 @@ checkpoint split_uniparc:
         2
     shell:
         """
-        seqkit split {input.uniparc} -s 10000 --two-pass -O "uniparc_chunks" --threads 2 2> {log}
+        seqkit split {input.uniparc} -s 10000 --two-pass -O "uniparc_chunks" --threads 2 &> {log}
         """
 
 # run hmmsearch on the chunks - returns sequences IDs matcching the provided hmm
@@ -78,23 +77,27 @@ rule hmmsearch:
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
         uniparc_chunk="uniparc_chunks/uniparc_active.part_{index}.fasta"
     output:
-        hmm="hmm_results/hmm_{index}.tsv"
+        hmm_tps="hmm_results/hmm_tps_{index}.tsv",
+        hmm_tpsc="hmm_results/hmm_tpsc_{index}.tsv"
+    log:
+        "logs/hmmsearch_{index}.log"
     params:
         memory="10" #TODO: change the value?
     threads:
         16
     shell:
         """
-        hmmsearch --noali --tblout {output.hmm} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.uniparc_chunk} 
+        hmmsearch --noali --tblout {output.hmm_tps} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.uniparc_chunk} &> {log}
+        hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.uniparc_chunk} &>> {log}
         """
 
 def aggregate_input(wildcards):
     checkpoints_output = checkpoints.split_uniparc.get(**wildcards).output[0]
     indeces = glob_wildcards(os.path.join(checkpoints_output, "uniparc_active.part_{index}.fasta")).index
-    completed = expand(os.path.join("hmm_results", "hmm_{index}.tsv"),index=indeces)
+    completed = expand(os.path.join("hmm_results", "hmm_tps_{index}.tsv"),index=indeces)
+    completed2 = expand(os.path.join("hmm_results", "hmm_tpsc_{index}.tsv"), index=indeces)
+    completed.extend(completed2)
     return completed    
-
-#return expand("hmm_results/hmm_{index}.tsv", index=glob_wildcards(os.path.join(checkpoints_output,"uniparc_active.part_{index}.fasta")).index)
 
 
 rule combine_hmm:
@@ -110,7 +113,7 @@ rule combine_hmm:
         1
     shell:
         """
-        cat {input} | grep -v '#'> {output}
+        cat {input} | grep -v '#'> {output} 2> {log}
         """
 rule get_UPIs:
     input:
@@ -125,7 +128,7 @@ rule get_UPIs:
         1
     shell:
         """
-        cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} 
+        cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} 2> {log}
         """
 checkpoint split_UPIs:
     input:
@@ -140,8 +143,8 @@ checkpoint split_UPIs:
         1
     shell:
         """
-        mkdir -p {output}
-        split -d -l 10 {input} {output}/upi_
+        mkdir -p {output} 2> {log}
+        split -d -l 10 {input} {output}/upi_i 2> {log}
         """
         
 rule get_uniprot_data:
@@ -149,13 +152,15 @@ rule get_uniprot_data:
         upi_file="UPIs/upi_{index}"
     output:
         uniprot_data="uniprot/seq_{index}"  #"uniprot_data/seq_{index}"
+    log:
+        "logs/get_uniprot_data_{index}.log" 
     params:
         memory="1"
     threads:
         1
     shell:
         """
-        ./map.py {input}
+        ./map.py {input} 2> {log}
         """
 #    run:
 #        """
@@ -213,12 +218,7 @@ rule merge_results:
         1
     shell:
         """
-        cat {input} > {output}
+        cat {input} | grep -v 'Entry' | sort | uniq > {output} 2> {log}
         """  
 
  
-
-# create desired output: sequence ID; AA sequence; species name; TPS class
-#rule:
-#input:
-#params:

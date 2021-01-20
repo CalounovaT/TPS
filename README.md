@@ -2,6 +2,7 @@
 
 ## Packages
 
-Snakemake
+snakemake
 seqkit
 hmmer
+biopython

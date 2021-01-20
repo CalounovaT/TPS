@@ -9,7 +9,7 @@ configfile: "config.yaml"
 
 rule all:
   input:
-        "db/uniparc_active.fasta.gz",
+#        "db/uniparc_active.fasta.gz",
         "hmm_profiles/PF01397.hmm",
         "hmm_profiles/PF03936.hmm",
 	"uniparc_chunks",
@@ -24,19 +24,19 @@ rule clean:
         rm -rf hmm_results logs
         """
     
-rule download_uniparc:
-    output:
-        "db/uniparc_active.fasta.gz"
-    log:
-        "logs/download_uniparc.log"
-    params:
-        memory="2"
-    threads:
-        1
-    shell:
-        """
-        wget --directory-prefix db "https://ftp.expasy.org/databases/uniprot/current_release/uniparc/uniparc_active.fasta.gz" &> {log}
-        """
+#rule download_uniparc:
+#    output:
+#        "db/uniparc_active.fasta.gz"
+#    log:
+#        "logs/download_uniparc.log"
+#    params:
+#        memory="2"
+#    threads:
+#        1
+#    shell:
+#        """
+#        wget --directory-prefix db "https://ftp.expasy.org/databases/uniprot/current_release/uniparc/uniparc_active.fasta.gz" &> {log}
+#        """
 
 rule download_hmmprofiles:
     output:
@@ -57,7 +57,7 @@ rule download_hmmprofiles:
 # split the database into smaller chunks so it an be searched with hmmsearch - max is 100K?
 checkpoint split_uniparc:
     input:
-        uniparc="db/uniparc_active.fasta.gz"
+        uniparc="uniparc_active.fasta.gz"
     output:
         directory("uniparc_chunks")
     log:
@@ -110,7 +110,7 @@ rule combine_hmm:
         1
     shell:
         """
-        cat {input} | grep -v '#'> {output} &> {log}
+        cat {input} | grep -v '#'> {output}
         """
 rule get_UPIs:
     input:
@@ -125,7 +125,7 @@ rule get_UPIs:
         1
     shell:
         """
-        cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} &> {log}
+        cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} 
         """
 checkpoint split_UPIs:
     input:
@@ -140,15 +140,15 @@ checkpoint split_UPIs:
         1
     shell:
         """
-        mkdir -p {output} &> {log}
-        split -d -l 10 {input} {output}/upi_ &>> {log}
+        mkdir -p {output}
+        split -d -l 10 {input} {output}/upi_
         """
         
 rule get_uniprot_data:
     input:
         upi_file="UPIs/upi_{index}"
     output:
-        uniprot_data="uniprot_data/seq_{index}"
+        uniprot_data="seq_{index}"  #"uniprot_data/seq_{index}"
     params:
         memory="1"
     threads:
@@ -156,13 +156,13 @@ rule get_uniprot_data:
     run:
         """
         # create output directory
-        os.mkdir("uniprot_data")
+        #os.mkdir("uniprot_data")
         
         # load UPIs from file
         with open(input["upi_file"], "r") as input_handle:
             upis = [line.strip() for line in input_handle.readlines()]    
         upis_str = " ".join(upis)
-        
+        subprocess.run(['touch','upis_str_made'])
         # map the UPIs to Uniprot accessions
         params = {
         'from': 'UPARC',
@@ -180,7 +180,7 @@ rule get_uniprot_data:
 
         accessions = [line.split('\t') for line in mapping.split('\n')]
         accessions = [id_entry[1] for id_entry in accessions if len(id_entry) == 2][1:] # skipping first elements since it contains header
-       
+        subprocess.run(['touch','accessions_made']
         # retrive the entries in format: id	organism	sequence
         url = 'uniprot.org/uniprot?format=tab&columns=id,organism,sequence&query=accession%3A' + accessions[0]
 
@@ -193,7 +193,7 @@ rule get_uniprot_data:
 def aggregate_uniprot(wildcards):
     checkpoints_output = checkpoints.split_UPIs.get(**wildcards).output[0]
     indeces = glob_wildcards(os.path.join(checkpoints_output, "upi_{index}")).index
-    completed = expand(os.path.join("uniprot_data", "seq_{index}"), index=indeces)
+    completed = expand("seq_{index}", index=indeces)
     return completed
 
 rule merge_results:
@@ -213,9 +213,8 @@ rule merge_results:
         """  
 
  
+
 # create desired output: sequence ID; AA sequence; species name; TPS class
 #rule:
 #input:
-#output:
-#log:
 #params:

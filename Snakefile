@@ -20,7 +20,7 @@ rule all:
 rule clean:
     shell:
         """
-        rm -rf hmm_results logs
+        rm -rf hmm_results logs hmm_combined.out output.txt uniparc_chunks uniprot UPIs upi.txt
         """
     
 rule download_uniparc:
@@ -56,7 +56,7 @@ rule download_hmmprofiles:
 # split the database into smaller chunks so it an be searched with hmmsearch - max is 100K?
 checkpoint split_uniparc:
     input:
-        uniparc="db/uniparc_active.fasta.gz"
+        uniparc="uniparc_active.fasta.gz"
     output:
         directory("uniparc_chunks")
     log:
@@ -67,33 +67,37 @@ checkpoint split_uniparc:
         2
     shell:
         """
-        seqkit split {input.uniparc} -s 10000 --two-pass -O "uniparc_chunks" --threads 2 2> {log}
+        seqkit split {input.uniparc} -s 10000 --two-pass -O "uniparc_chunks" --threads 2 &> {log}
         """
 
-# run hmmsearch on the chunks - returns sequences IDs matcching the provided hmm
+# run hmmsearch on the chunks - returns sequences IDs matching the provided hmm
 rule hmmsearch:
     input:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
         uniparc_chunk="uniparc_chunks/uniparc_active.part_{index}.fasta"
     output:
-        hmm="hmm_results/hmm_{index}.tsv"
+        hmm_tps="hmm_results/hmm_tps_{index}.tsv",
+        hmm_tpsc="hmm_results/hmm_tpsc_{index}.tsv"
+    log:
+        "logs/hmmsearch_{index}.log"
     params:
         memory="10" #TODO: change the value?
     threads:
         16
     shell:
         """
-        hmmsearch --noali --tblout {output.hmm} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.uniparc_chunk} 
+        hmmsearch --noali --tblout {output.hmm_tps} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.uniparc_chunk} &> {log}
+        hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.uniparc_chunk} &>> {log}
         """
 
 def aggregate_input(wildcards):
     checkpoints_output = checkpoints.split_uniparc.get(**wildcards).output[0]
     indeces = glob_wildcards(os.path.join(checkpoints_output, "uniparc_active.part_{index}.fasta")).index
-    completed = expand(os.path.join("hmm_results", "hmm_{index}.tsv"),index=indeces)
+    completed = expand(os.path.join("hmm_results", "hmm_tps_{index}.tsv"),index=indeces)
+    completed2 = expand(os.path.join("hmm_results", "hmm_tpsc_{index}.tsv"), index=indeces)
+    completed.extend(completed2)
     return completed    
-
-#return expand("hmm_results/hmm_{index}.tsv", index=glob_wildcards(os.path.join(checkpoints_output,"uniparc_active.part_{index}.fasta")).index)
 
 
 rule combine_hmm:
@@ -109,7 +113,7 @@ rule combine_hmm:
         1
     shell:
         """
-        cat {input} | grep -v '#'> {output} &> {log}
+        cat {input} | grep -v '#'> {output} 2> {log}
         """
 rule get_UPIs:
     input:
@@ -124,7 +128,7 @@ rule get_UPIs:
         1
     shell:
         """
-        cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} &> {log}
+        cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} 2> {log}
         """
 checkpoint split_UPIs:
     input:
@@ -139,60 +143,30 @@ checkpoint split_UPIs:
         1
     shell:
         """
-        mkdir -p {output} &> {log}
-        split -d -l 10 {input} {output}/upi_ &>> {log}
+        mkdir -p {output} 2> {log}
+        split -d -l 10 {input} {output}/upi_i 2> {log}
         """
         
 rule get_uniprot_data:
     input:
         upi_file="UPIs/upi_{index}"
     output:
-        uniprot_data="uniprot_data/seq_{index}"
+        uniprot_data="uniprot/seq_{index}"  
+    log:
+        "logs/get_uniprot_data_{index}.log" 
     params:
         memory="1"
     threads:
         1
-    run:
+    shell:
         """
-        # create output directory
-        os.mkdir("uniprot_data")
-        
-        # load UPIs from file
-        with open(input["upi_file"], "r") as input_handle:
-            upis = [line.strip() for line in input_handle.readlines()]    
-        upis_str = " ".join(upis)
-        
-        # map the UPIs to Uniprot accessions
-        params = {
-        'from': 'UPARC',
-        'to': 'ACC',
-        'format': 'tab',
-        'query': upis_str
-        }
-
-        data = urllib.parse.urlencode(params)
-        data = data.encode('utf-8')
-        req = urllib.request.Request(url, data)
-        with urllib.request.urlopen(req) as f:
-            response = f.read()
-        mapping = response.decode('utf-8')
-
-        accessions = [line.split('\t') for line in mapping.split('\n')]
-        accessions = [id_entry[1] for id_entry in accessions if len(id_entry) == 2][1:] # skipping first elements since it contains header
-       
-        # retrive the entries in format: id	organism	sequence
-        url = 'uniprot.org/uniprot?format=tab&columns=id,organism,sequence&query=accession%3A' + accessions[0]
-
-	for entry in accessions[1:]:
-            url += '+OR+accession%3A' + entry
-
-        subprocess.run(['wget','-O',output["uniprot_data"],url]
+        ./map.py {input} 2> {log}
         """
 
 def aggregate_uniprot(wildcards):
     checkpoints_output = checkpoints.split_UPIs.get(**wildcards).output[0]
     indeces = glob_wildcards(os.path.join(checkpoints_output, "upi_{index}")).index
-    completed = expand(os.path.join("uniprot_data", "seq_{index}"), index=indeces)
+    completed = expand("uniprot/seq_{index}", index=indeces)
     return completed
 
 rule merge_results:
@@ -208,13 +182,7 @@ rule merge_results:
         1
     shell:
         """
-        cat {input} > {output}
+        cat {input} | grep -v 'Entry' | sort | uniq > {output} 2> {log}
         """  
 
  
-# create desired output: sequence ID; AA sequence; species name; TPS class
-#rule:
-#input:
-#output:
-#log:
-#params:

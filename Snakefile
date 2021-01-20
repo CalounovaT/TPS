@@ -8,13 +8,13 @@ configfile: "config.yaml"
 #rule localrules: all, clean
 
 rule all:
-  input:
+    input:
         "db/uniparc_active.fasta.gz",
         "hmm_profiles/PF01397.hmm",
         "hmm_profiles/PF03936.hmm",
-	"uniparc_chunks",
+	    "uniparc_chunks",
         "hmm_combined.out",
-	"upi.txt",
+	    "upi.txt",
         "output.txt"
        # "hmm_results"
 

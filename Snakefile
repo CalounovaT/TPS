@@ -144,7 +144,7 @@ checkpoint split_UPIs:
     shell:
         """
         mkdir -p {output} 2> {log}
-        split -d -l 10 {input} {output}/upi_i 2> {log}
+        split -d -l 10 {input} {output}/upi_ 2> {log}
         """
         
 rule get_uniprot_data:

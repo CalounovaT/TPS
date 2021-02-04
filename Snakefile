@@ -19,7 +19,7 @@ rule all:
         "upi.txt",
         "output.txt",
         "1kp",
-        "1kp_output"
+        "1kp_output.txt"
         #"1kp_hmm_combined.out"
 
 rule clean:
@@ -334,7 +334,7 @@ rule onekp_merge:
     input:
         aggregate_1kp_input
     output:
-        "1kp_output"
+        "1kp_output.txt"
     log:
         "logs/1kp_merge.log"
     params:
@@ -343,5 +343,9 @@ rule onekp_merge:
         1
     shell:
         """
-        cat {input} > {output} 2> {log}
+        cat {input} > 1kp_output_tmp.txt 2> {log}
+        seqkit seq -w 0 1kp_output_tmp.txt -o 1kp_output_tmp2.txt
+        awk '{{printf "%s%s",$0,NR%2?"\t":RS}}' 1kp_output_tmp2.txt > {output} 2>> {log}
+        rm -f 1kp_output_tmp.txt
+        rm -f 1kp_output_tmp2.txt
         """

@@ -111,6 +111,12 @@ rule combine_hmm_list:
         aggregate_input
     output:
         "tmp.list"
+    log:
+        "logs/hmm_list.log"
+    params:
+        memory="5"
+    threads:
+        1
     run:
         with open(output[0], "w") as output_handle:
              output_handle.write('\n'.join(input))  
@@ -120,27 +126,17 @@ rule combine_hmm:
         "tmp.list"
     output:
         "hmm_combined.out"
+    log:
+        "logs/hmm_combined.log"
+    params:
+        memory="5"
+    threads:
+        1
     shell:
         """
-        cat {input} | xargs cat | grep -v '#' > {output}
+        cat {input} | xargs cat | grep -v '#' > {output} 2> {log}
         """
 
-#rule combine_hmm:
-#    input:
-#        aggregate_input
-#    output:
-#        "hmm_combined.out"
-#    log:
-#        "logs/combine_hmm.log"
-#    params:
-#        memory="1"
-#    threads:
-#        1
-#    shell:
-#        """
-#        ls {input} 2> {log}
-#        
-#        """
 rule get_UPIs:
     input:
         upi_file="hmm_combined.out"
@@ -156,6 +152,7 @@ rule get_UPIs:
         """
         cut -d ' ' -f 1 {input.upi_file} > {output.upi_list} 2> {log}
         """
+
 checkpoint split_UPIs:
     input:
         upi_list="upi.txt"

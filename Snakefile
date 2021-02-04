@@ -105,7 +105,7 @@ def aggregate_input(wildcards):
     completed.extend(completed2)
     return completed    
 
-
+# using cat {input} failed because input contained too many files so creating list with the files and then using xargs cat in rule combine_hmm
 rule combine_hmm_list:
     input:
         aggregate_input

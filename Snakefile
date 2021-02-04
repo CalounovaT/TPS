@@ -20,7 +20,7 @@ rule all:
 rule clean:
     shell:
         """
-        rm -rf hmm_results logs hmm_combined.out output.txt #uniparc_chunks uniprot UPIs upi.txt
+        rm -rf hmm_results logs hmm_combined.out output.txt uniparc_chunks uniprot UPIs upi.txt tmp.list 
         """
     
 rule download_uniparc:

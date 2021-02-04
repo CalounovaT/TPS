@@ -6,7 +6,7 @@ import urllib.request
 configfile: "config.yaml"
 
 #rule localrules: all, clean
-
+# 1KP project   https://db.cngb.org/onekp/
 rule all:
     input:
         "db/uniparc_active.fasta.gz",
@@ -20,7 +20,7 @@ rule all:
 rule clean:
     shell:
         """
-        rm -rf hmm_results logs hmm_combined.out output.txt uniparc_chunks uniprot UPIs upi.txt
+        rm -rf hmm_results logs hmm_combined.out output.txt #uniparc_chunks uniprot UPIs upi.txt
         """
     
 rule download_uniparc:
@@ -54,15 +54,21 @@ rule download_hmmprofiles:
         """
 
 # split the database into smaller chunks so it an be searched with hmmsearch - max is 100K?
+# the db contains 374 059 950 sequences in 02/2021
+# splitting by 10 000 should result in 37 406 files
+# splitting by 50 000 should result in 7 482 files
+
+# TODO: filter files with seqkit so they dont contain sequences longer than 100k 
+# seqkit seq -M 100000
 checkpoint split_uniparc:
     input:
-        uniparc="uniparc_active.fasta.gz"
+        uniparc="db/uniparc_active.fasta.gz"
     output:
         directory("uniparc_chunks")
     log:
         "logs/uniparc_split.log"
     params:
-        memory="2" #TODO: change the value?
+        memory="15" #TODO: change the value?
     threads:
         2
     shell:
@@ -100,21 +106,41 @@ def aggregate_input(wildcards):
     return completed    
 
 
-rule combine_hmm:
+rule combine_hmm_list:
     input:
         aggregate_input
     output:
+        "tmp.list"
+    run:
+        with open(output[0], "w") as output_handle:
+             output_handle.write('\n'.join(input))  
+
+rule combine_hmm:
+    input:
+        "tmp.list"
+    output:
         "hmm_combined.out"
-    log:
-        "logs/combine_hmm.log"
-    params:
-        memory="1"
-    threads:
-        1
     shell:
         """
-        cat {input} | grep -v '#'> {output} 2> {log}
+        cat {input} | xargs cat | grep -v '#' > {output}
         """
+
+#rule combine_hmm:
+#    input:
+#        aggregate_input
+#    output:
+#        "hmm_combined.out"
+#    log:
+#        "logs/combine_hmm.log"
+#    params:
+#        memory="1"
+#    threads:
+#        1
+#    shell:
+#        """
+#        ls {input} 2> {log}
+#        
+#        """
 rule get_UPIs:
     input:
         upi_file="hmm_combined.out"

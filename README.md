@@ -32,7 +32,7 @@ Run the main script
 ```
 ./run_script.sh
 ```
-## Output tructure
+## Output structure
 ```
 TPS
 ├── README.md
@@ -72,6 +72,7 @@ TPS
     ├── TSA_output.fasta
     ├── TSA_output_long.fasta
     ├── uniprot_output.fasta
-    └── uniprot_output.txt
+    |── uniprot_output.txt
+    └── final.tsv                     - final tsv table with all results together
 
 ```

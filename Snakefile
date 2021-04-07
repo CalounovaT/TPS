@@ -21,7 +21,8 @@ rule all:
         "results/uniprot_output.txt",
         "results/1kp_output.txt",
         "results/phytozome_output.txt",
-        "results/TSA_output.txt"
+        "results/TSA_output.txt",
+        "results/final.tsv"
 
 rule clean:
     shell:
@@ -277,7 +278,7 @@ rule uniprot_merge:
         """
         mkdir -p results 2> {log}
         cat {input} | xargs cat > {output.tmp} 2>> {log}
-        sed '/^<html>/,/^<\/html>/{{/^<html>/!{{/^<\/html>/!d}}}}' {output.tmp} | grep -v "<html>" | grep -v "</html>" | grep -v 'Entry' > {output.tsv} 2>> {log}
+        sed '/^<html>/,/^<\/html>/{{/^<html>/!{{/^<\/html>/!d}}}}' {output.tmp} | grep -v "<html>" | grep -v "</html>" | grep -v 'Entry' | sort | uniq > {output.tsv} 2>> {log}
         sed 's$^$>$' {output.tsv} | sed -E 's$\\t$\\n$2' > {output.short_fasta} 2>> {log}
         #cat {input} | xargs cat > {output.short_fasta} 2>> {log}
         #cat {input} | xargs cat | grep -v 'Entry' | sort | uniq > {output.tsv} 2>> {log}
@@ -655,4 +656,32 @@ rule TSA_merge:
         cat {input} | xargs cat > {output.long_fasta} 2>> {log}
         seqkit seq -w 0 {output.long_fasta} -o {output.short_fasta} 2>> {log}
         awk '{{printf "%s%s",$0,NR%2?"\t":RS}}' {output.short_fasta} > {output.tsv} 2>> {log}
+        """
+
+## MERGE ALL RESULTS INTO A SINGLE FILE
+rule merge_results:
+    input:
+        onekp="results/1kp_output.txt",
+        phytozome="results/phytozome_output.txt",
+        uniprot="results/uniprot_output.txt",
+        tsa="results/TSA_output.txt"
+    output:
+        onekp="results/1kp_output_f.tsv",
+        phytozome="results/phytozome_output_f.tsv",
+        uniprot="results/uniprot_output_f.tsv",
+        tsa="results/TSA_output_f.tsv",
+        fin="results/final.tsv"
+    log:
+        "logs/merge_results.log"
+    params:
+        memory="1"
+    threads:
+        1
+    shell:
+        """
+        sed -r "s#(>scaffold-([A-Z]{{4}}-[0-9]{{7}})-([A-Za-z_]+).+)\t(.+)#\\2\t\\1\t\\3\t1kp\t\\4#" {input.onekp} > {output.onekp} 2> {log}
+        sed -r 's#>(.+)\t(.+)\t(.+)#\\1\t\\1\t\\2\tphytozome\t\\3#' {input.phytozome} > {output.phytozome} 2>> {log}
+        sed -r 's#>((.+) .+ .+ .+ .+ .+ .+)\t(.+)\t(.+)#\\2\t\\1\t\\3\tTSA\t\\4#' {input.tsa} > {output.tsa} 2>> {log}
+        sed -r 's#(.+)\t(.+)\t(.+)#\\1\t\\1\t\\2\tuniprot\t\\3#' {input.uniprot} > {output.uniprot} 2>> {log}
+        cat {output.onekp} {output.phytozome} {output.uniprot} {output.tsa} > {output.fin} 2>> {log}
         """

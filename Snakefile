@@ -22,7 +22,10 @@ rule all:
         "results/1kp_output.txt",
         "results/phytozome_output.txt",
         "results/TSA_output.txt",
-        "results/final.tsv"
+        "results/final.tsv",
+        "TPS_classifications/classification_result_top.tsv",
+        "results/final.fasta",
+        "results/final_classified.tsv"
 
 rule clean:
     shell:
@@ -664,13 +667,18 @@ rule merge_results:
         onekp="results/1kp_output.txt",
         phytozome="results/phytozome_output.txt",
         uniprot="results/uniprot_output.txt",
-        tsa="results/TSA_output.txt"
+        tsa="results/TSA_output.txt",
+        onekp_fasta="results/1kp_output.fasta",
+        phytozome_fasta="results/phytozome_output.fasta",
+        uniprot_fasta="results/uniprot_output.fasta",
+        tsa_fasta="results/TSA_output.fasta"
     output:
         onekp="results/1kp_output_f.tsv",
         phytozome="results/phytozome_output_f.tsv",
         uniprot="results/uniprot_output_f.tsv",
         tsa="results/TSA_output_f.tsv",
-        fin="results/final.tsv"
+        fin="results/final.tsv",
+        fin_fasta = "results/final.fasta"
     log:
         "logs/merge_results.log"
     params:
@@ -683,5 +691,124 @@ rule merge_results:
         sed -r 's#>(.+)\t(.+)\t(.+)#\\1\t\\1\t\\2\tphytozome\t\\3#' {input.phytozome} > {output.phytozome} 2>> {log}
         sed -r 's#>((.+) .+ .+ .+ .+ .+ .+)\t(.+)\t(.+)#\\2\t\\1\t\\3\tTSA\t\\4#' {input.tsa} > {output.tsa} 2>> {log}
         sed -r 's#(.+)\t(.+)\t(.+)#\\1\t\\1\t\\2\tuniprot\t\\3#' {input.uniprot} > {output.uniprot} 2>> {log}
-        cat {output.onekp} {output.phytozome} {output.uniprot} {output.tsa} > {output.fin} 2>> {log}
+        cat {output.onekp} {output.phytozome} {output.uniprot} {output.tsa} > results/final_tmp.tsv 2>> {log}
+        cat {input.onekp_fasta} {input.phytozome_fasta} {input.uniprot_fasta} {input.tsa_fasta} > results/final_tmp.fasta 2>> {log}
+        seqkit rmdup -n results/final_tmp.fasta > {output.fin_fasta} 2>> {log}
+        rm results/final_tmp.fasta 2>> {log}
+        sort results/final_tmp.tsv | uniq > {output.fin} 2>> {log}
+        rm results/final_tmp.tsv 2>> {log}
         """
+
+## PREPARE DATABASE OF HMMs
+
+rule create_hmm_db:
+    input:
+        di_hmm = "TPS_classes_hmms/di_clustalw.hmm",
+        mono_hmm = "TPS_classes_hmms/mono_clustalw.hmm",
+        sesq_hmm = "TPS_classes_hmms/sesq_clustalw.hmm",
+        tri_hmm = "TPS_classes_hmms/tri_clustalw.hmm"
+    output:
+        hmm_db = "TPS_classes_hmms/hmm_db_clustalw.hmm"
+    log:
+        "logs/create_hmm_db.log"
+    params:
+        memory="1"
+    threads:
+        1
+    shell:
+        """
+        cat {input.di_hmm} {input.mono_hmm} {input.sesq_hmm} {input.tri_hmm} > {output} 2> {log}
+        hmmpress {output} &>> {log}
+        """
+
+
+## CLASSIFY THE SEQUENCES INTO CLASSES (mono/sesqui/di/tri TPS)
+rule classify_sequences:
+    input:
+        fasta_file="results/final.fasta",
+        hmm_db="TPS_classes_hmms/hmm_db_clustalw.hmm"
+    output:
+        all_results="TPS_classifications/classification_result.tsv",
+        top_results="TPS_classifications/classification_result_top.tsv"
+    log:
+        "logs/classify_sequences.log"
+    params:
+        memory="5"
+    threads:
+        16
+    shell:
+        """
+        hmmscan --cpu {threads} --tblout {output.all_results} --noali -o {log} {input.hmm_db} {input.fasta_file} 2> {log}
+        awk '!x[$3]++' {output.all_results} > {output.top_results} 2>> {log}
+        """
+    
+rule get_class_ids:
+    input:
+        class_file="TPS_classifications/classification_result_top.tsv"
+    output:
+        mono_ids="TPS_classifications/mono_ids.txt",
+        sesq_ids="TPS_classifications/sesq_ids.txt",
+        di_ids="TPS_classifications/di_ids.txt",
+        tri_ids="TPS_classifications/tri_ids.txt"
+    log:
+        "logs/get_class_ids.log"
+    params:
+        memory="1"
+    threads:
+        1
+    shell:
+        """
+        grep mono_clustalw {input.class_file} | awk '{{print $3}}' > {output.mono_ids} 2> {log}
+        grep sesq_clustalw {input.class_file} | awk '{{print $3}}' > {output.sesq_ids} 2>> {log}
+        grep di_clustalw {input.class_file} | awk '{{print $3}}' > {output.di_ids} 2>> {log}
+        grep tri_clustalw {input.class_file} | awk '{{print $3}}' > {output.tri_ids} 2>> {log}
+        """
+
+rule update_table:
+    input:
+        mono_ids="TPS_classifications/mono_ids.txt",
+        sesq_ids="TPS_classifications/sesq_ids.txt",
+        di_ids="TPS_classifications/di_ids.txt",
+        tri_ids="TPS_classifications/tri_ids.txt",
+        table="results/final.tsv"
+    output:
+        updated_table="results/final_classified.tsv"
+    log:
+        "logs/update_table.log"
+    params:
+        memory="1"
+    threads:
+        1
+    run:
+        with open(input.mono_ids,'r') as mono_handle:
+            mono_ids = [line.strip() for line in mono_handle.readlines()]
+        with open(input.sesq_ids, 'r') as sesq_handle:
+            sesq_ids = [line.strip() for line in sesq_handle.readlines()]
+        with open(input.di_ids, 'r') as di_handle:
+            di_ids = [line.strip() for line in di_handle.readlines()]
+        with open(input.tri_ids, 'r') as tri_handle:
+            tri_ids = [line.strip() for line in tri_handle.readlines()]
+        with open(input.table, 'r') as table_handle, open(output.updated_table, 'w') as output_handle:
+            for line in table_handle:
+                line_list = line.split('\t')
+                if len(line_list) > 1:
+                    line_header = line_list[1]
+                else:
+                    line_header = ""
+                di_res = [line_header for di_id in di_ids if di_id in line_header]
+                mono_res = [line_header for mono_id in mono_ids if mono_id in line_header]
+                sesq_res = [line_header for sesq_id in sesq_ids if sesq_id in line_header]
+                tri_res = [line_header for tri_id in tri_ids if tri_id in line_header]
+
+                if len(di_res) > 0:
+                    output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "di" + "\t" + "\t".join(line.split('\t')[4:]))
+                elif len(mono_res) > 0:
+                    output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "mono" + "\t" + "\t".join(line.split('\t')[4:]))
+                elif len(sesq_res) > 0:
+                    output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "sesq" + "\t" + "\t".join(line.split('\t')[4:]))
+                elif len(tri_res) > 0:
+                    output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "tri" + "\t" + "\t".join(line.split('\t')[4:]))
+                else:
+                    output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "-" + "\t" + "\t".join(line.split('\t')[4:]))
+
+

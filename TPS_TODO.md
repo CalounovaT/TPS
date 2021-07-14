@@ -31,7 +31,7 @@
 
 ## 3) Assign TPS class
 
-* already implemented I just have to run it on new results
+* already implemented I just have to run it on new results (using HMMs created based on Adelas db, not the Terzyme ones)
 
 ## 4) Create filter to keep complete sequences
 

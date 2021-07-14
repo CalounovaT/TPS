@@ -18,6 +18,9 @@ rule all:
         "hmm_profiles/PF01397.hmm",
         "hmm_profiles/PF03936.hmm",
         "hmm_profiles/PF19086.hmm",
+        "hmm_profiles/PF13243.hmm",
+        "hmm_profiles/PF13249.hmm",
+        "hmm_profiles/PF00494.hmm",
         "results/uniprot_output.txt",
         "results/1kp_output.txt",
         "results/phytozome_output.txt",
@@ -85,7 +88,10 @@ rule download_hmmprofiles:
     output:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
-        terpene_synth_C2="hmm_profiles/PF19086.hmm" # Family: Terpene_syn_C_2 (PF19086) 
+        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086)
+        sqhop_cycl_C="hmm_profiles/PF13243.hmm", # Squalene-hopene cyclase C-terminal domain
+        sqhop_cycl_N="hmm_profiles/PF13249.hmm", # Squalene-hopene cyclase N-terminal domain
+        sqps_synth="hmm_profiles/PF00494.hmm" # Squalene/phytoene synthase 
     log:
         "logs/download_hmmprofiles.log"
     params:
@@ -97,6 +103,9 @@ rule download_hmmprofiles:
         wget -O hmm_profiles/PF01397.hmm "http://pfam.xfam.org/family/PF01397/hmm" &> {log}
         wget -O hmm_profiles/PF03936.hmm "http://pfam.xfam.org/family/PF03936/hmm" &>> {log}
         wget -O hmm_profiles/PF19086.hmm "http://pfam.xfam.org/family/PF19086/hmm" &>> {log}
+        wget -O hmm_profiles/PF13243.hmm "http://pfam.xfam.org/family/PF13243/hmm" &>> {log}
+        wget -O hmm_profiles/PF13249.hmm "http://pfam.xfam.org/family/PF13249/hmm" &>> {log}
+        wget -O hmm_profiles/PF00494.hmm "http://pfam.xfam.org/family/PF00494/hmm" &>> {log}
         """
 
 ## *****UNIPARC DATA*****
@@ -130,12 +139,18 @@ rule hmmsearch_uniparc:
     input:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
-        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086) 
+        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086)
+        sqhop_cycl_C="hmm_profiles/PF13243.hmm", # Squalene-hopene cyclase C-terminal domain
+        sqhop_cycl_N="hmm_profiles/PF13249.hmm", # Squalene-hopene cyclase N-terminal domain
+        sqps_synth="hmm_profiles/PF00494.hmm", # Squalene/phytoene synthase 
         uniparc_chunk="db/uniparc_chunks/uniparc_filtered.part_{index}.fasta"
     output:
         hmm_tps="hmm_results/uniparc/hmm_tps_{index}.tsv",
         hmm_tpsc="hmm_results/uniparc/hmm_tpsc_{index}.tsv",
-        hmm_tpsc2="hmm_results/uniparc/hmm_tpsc2_{index}.tsv"
+        hmm_tpsc2="hmm_results/uniparc/hmm_tpsc2_{index}.tsv",
+        hmm_sqhopc="hmm_results/uniparc/hmm_sqhopc_{index}.tsv",
+        hmm_sqhopn="hmm_results/uniparc/hmm_sqhopn_{index}.tsv",
+        hmm_sqps="hmm_results/uniparc/hmm_sqps_{index}.tsv"
     log:
         "logs/hmmsearch_{index}.log"
     params:
@@ -147,6 +162,9 @@ rule hmmsearch_uniparc:
         hmmsearch --noali --tblout {output.hmm_tps} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.uniparc_chunk} &> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.uniparc_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc2} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C2} {input.uniparc_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopc} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_C} {input.uniparc_chunk} &> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopn} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_N} {input.uniparc_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqps} -E {config[e_value_threshold]} --cpu {threads} {input.sqps_synth} {input.uniparc_chunk} &>> {log}
         """
 def aggregate_uniparc_input(wildcards):
     checkpoints_output = checkpoints.split_uniparc.get(**wildcards).output[0] # there could be a problem with changing the dir structure - uniparc moved to db/uniparc
@@ -154,8 +172,14 @@ def aggregate_uniparc_input(wildcards):
     completed = expand(os.path.join("hmm_results", "uniparc","hmm_tps_{index}.tsv"),index=indeces)
     completed2 = expand(os.path.join("hmm_results", "uniparc", "hmm_tpsc_{index}.tsv"), index=indeces)
     completed3 = expand(os.path.join("hmm_results", "uniparc", "hmm_tpsc2_{index}.tsv"), index=indeces)
+    completed4 = expand(os.path.join("hmm_results", "uniparc", "hmm_sqhopc_{index}.tsv"), index=indeces)
+    completed5 = expand(os.path.join("hmm_results", "uniparc", "hmm_sqhopn_{index}.tsv"), index=indeces)
+    completed6 = expand(os.path.join("hmm_results", "uniparc", "hmm_sqps_{index}.tsv"), index=indeces)
     completed.extend(completed2)
     completed.extend(completed3)
+    completed.extend(completed4)
+    completed.extend(completed5)
+    completed.extend(completed6)
     return completed    
 
 # using cat {input} failed because input contained too many files so creating list with the files and then using xargs cat in rule combine_hmm
@@ -294,12 +318,18 @@ rule onekp_hmmsearch:
     input:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
-        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086) 
+        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086)
+        sqhop_cycl_C="hmm_profiles/PF13243.hmm", # Squalene-hopene cyclase C-terminal domain
+        sqhop_cycl_N="hmm_profiles/PF13249.hmm", # Squalene-hopene cyclase N-terminal domain
+        sqps_synth="hmm_profiles/PF00494.hmm", # Squalene/phytoene synthase 
         onekp_chunk="db/1kp/{index}-translated-protein.fa.gz"
     output:
         hmm_tps="hmm_results/1kp/hmm_tps_{index}.tsv",
         hmm_tpsc="hmm_results/1kp/hmm_tpsc_{index}.tsv",
         hmm_tpsc2="hmm_results/1kp/hmm_tpsc2_{index}.tsv",
+        hmm_sqhopc="hmm_results/1kp/hmm_sqhopc_{index}.tsv",
+        hmm_sqhopn="hmm_results/1kp/hmm_sqhopn_{index}.tsv",
+        hmm_sqps="hmm_results/1kp/hmm_sqps_{index}.tsv",
         gunzipped_onekp_chunk="db/1kp/{index}-translated-protein.fa"
     log:
         "logs/1kp_hmmsearch_{index}.log"
@@ -312,6 +342,9 @@ rule onekp_hmmsearch:
         hmmsearch --noali --tblout {output.hmm_tps} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.onekp_chunk} &> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.onekp_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc2} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C2} {input.onekp_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopc} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_C} {input.onekp_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopn} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_N} {input.onekp_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqps} -E {config[e_value_threshold]} --cpu {threads} {input.sqps_synth} {input.onekp_chunk} &>> {log}
         gunzip -k {input.onekp_chunk}
         """
 ## GETTING THE SEQUENCES MATCHING THE HMM PROFILES
@@ -320,6 +353,9 @@ rule onekp_filter:
         tps_result="hmm_results/1kp/hmm_tps_{index}.tsv",
         tpsc_result="hmm_results/1kp/hmm_tpsc_{index}.tsv",
         tpsc2_result="hmm_results/1kp/hmm_tpsc2_{index}.tsv",
+        sqhopc_result="hmm_results/1kp/hmm_sqhopc_{index}.tsv",
+        sqhopn_result="hmm_results/1kp/hmm_sqhopn_{index}.tsv",
+        sqps_result="hmm_results/1kp/hmm_sqps_{index}.tsv",
         seq_file="db/1kp/{index}-translated-protein.fa"
     output:
         "filtered_results/1kp/{index}_filtered.fa"
@@ -334,23 +370,39 @@ rule onekp_filter:
         tps_ids = []
         tpsc_ids = []
         tpsc2_ids = []
-        with open(input[0], "r") as tps_input_handle:
+        sqhopc_ids = []
+        sqhopn_ids = []
+        sqps_ids = []
+        with open(input.tps_result, "r") as tps_input_handle:
             for line in tps_input_handle:
                 if line.startswith('#') == False:
                     tps_ids.append(line.split()[0])
-        with open(input[1], "r") as tpsc_input_handle:
+        with open(input.tpsc_result, "r") as tpsc_input_handle:
             for line in tpsc_input_handle:
                 if line.startswith('#') == False:
                     tpsc_ids.append(line.split()[0])
-        with open(input[2], "r") as tpsc2_input_handle:
+        with open(input.tpsc2_result, "r") as tpsc2_input_handle:
             for line in tpsc2_input_handle:
                 if line.startswith('#') == False:
                     tpsc2_ids.append(line.split()[0])
-        
+        with open(input.sqhopc_result, 'r') as sqhopc_handle:
+            for line in sqhopc_handle:
+                if line.startswith('#') == False:
+                    sqhopc_ids.append(line.split()[0])
+        with open(input.sqhopn_result, 'r') as sqhopn_handle:
+            for line in sqhopn_handle:
+                if line.startswith('#') == False:
+                    sqhopn_ids.append(line.split()[0])
+        with open(input.sqps_result, 'r') as sqps_handle:
+            for line in sqps_handle:
+                if line.startswith('#') == False:
+                    sqps_ids.append(line.split()[0])
+                    
         # find corresponding sequences
-        with open(input[3], "r") as input_handle, open(output[0], "w") as output_handle:
+        with open(input.seq_file, "r") as input_handle, open(output[0], "w") as output_handle:
             for record in Bio.SeqIO.parse(input_handle, "fasta"):
-                if record.id in tps_ids or record.id in tpsc_ids or record.id in tpsc2_ids:
+                record_id = record.id
+                if record_id in tps_ids or record_id in tpsc_ids or record_id in tpsc2_ids or record_id in sqhopc_ids or record_id in sqhopn_ids or record_id in sqps_ids:
                     Bio.SeqIO.write(record, output_handle, "fasta")
 
 ## CREATING THE FINAL FILE WITH THE 1KP DATA  
@@ -420,12 +472,18 @@ checkpoint phytozome_hmmsearch:
     input:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
-        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086) 
+        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086)
+        sqhop_cycl_C="hmm_profiles/PF13243.hmm", # Squalene-hopene cyclase C-terminal domain
+        sqhop_cycl_N="hmm_profiles/PF13249.hmm", # Squalene-hopene cyclase N-terminal domain
+        sqps_synth="hmm_profiles/PF00494.hmm", # Squalene/phytoene synthase  
         phytozome_chunk="db/Phytozome/{index}.protein2.fa"
     output:
         hmm_tps="hmm_results/phytozome/hmm_tps_{index}.tsv",
         hmm_tpsc="hmm_results/phytozome/hmm_tpsc_{index}.tsv",
-        hmm_tpsc2="hmm_results/phytozome/hmm_tpsc2_{index}.tsv"#,
+        hmm_tpsc2="hmm_results/phytozome/hmm_tpsc2_{index}.tsv",#,
+        hmm_sqhopc="hmm_results/phytozome/hmm_sqhopc_{index}.tsv",
+        hmm_sqhopn="hmm_results/phytozome/hmm_sqhopn_{index}.tsv",
+        hmm_sqps="hmm_results.phytozome/hmm_sqps_{index}.tsv"
     log:
         "logs/phytozome_hmmsearch_{index}.log"
     params:
@@ -435,6 +493,9 @@ checkpoint phytozome_hmmsearch:
         hmmsearch --noali --tblout {output.hmm_tps} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.phytozome_chunk} &> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.phytozome_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc2} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C2} {input.phytozome_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopc} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_C} {input.phytozome_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopn} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_N} {input.phytozome_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqps} -E {config[e_value_threshold]} --cpu {threads} {input.sqps_synth} {input.phytozome_chunk} &>> {log}
         """
 
 ## GETTING THE SEQUENCES MATCHING THE HMM PROFILES
@@ -443,6 +504,9 @@ rule phytozome_filter:
         tps_result="hmm_results/phytozome/hmm_tps_{index}.tsv",
         tpsc_result="hmm_results/phytozome/hmm_tpsc_{index}.tsv",
         tpsc2_result="hmm_results/phytozome/hmm_tpsc2_{index}.tsv",
+        sqhopc_result="hmm_results/phytozome/hmm_sqhopc_{index}.tsv",
+        sqhopn_result="hmm_results/phytozome/hmm_sqhopn_{index}.tsv",
+        sqps_result="hmm_results/phytozome/hmm_sqps_{index}.tsv",
         seq_file="db/Phytozome/{index}.protein2.fa"
     output:
         "filtered_results/phytozome/{index}_filtered.fa"
@@ -457,23 +521,40 @@ rule phytozome_filter:
         tps_ids = []
         tpsc_ids = []
         tpsc2_ids = []
-        with open(input[0], "r") as tps_input_handle:
+        sqhopc_ids = []
+        sqhopn_ids = []
+        sqps_ids = []
+        with open(input.tps_result, "r") as tps_input_handle:
             for line in tps_input_handle:
                 if line.startswith('#') == False:
                     tps_ids.append(line.split()[0])
-        with open(input[1], "r") as tpsc_input_handle:
+        with open(input.tpsc_result, "r") as tpsc_input_handle:
             for line in tpsc_input_handle:
                 if line.startswith('#') == False:
                     tpsc_ids.append(line.split()[0])
-        with open(input[2], "r") as tpsc2_input_handle:
+        with open(input.tpsc2_result, "r") as tpsc2_input_handle:
             for line in tpsc2_input_handle:
                 if line.startswith('#') == False:
                     tpsc2_ids.append(line.split()[0])
+        with open(input.sqhopc_result, 'r') as sqhopc_handle:
+            for line in sqhopc_handle:
+                if line.startswith('#') == False:
+                    sqhopc_ids.append(line.split()[0])
+        with open(input.sqhopn_result, 'r') as sqhopn_handle:
+            for line in sqhopn_handle:
+                if line.startswith('#') == False:
+                    sqhopn_ids.append(line.split()[0])
+        with open(input.sqps_result, 'r') as sqps_handle:
+            for line in sqps_handle:
+                if line.startswith('#') == False:
+                    sqps_ids.append(line.split()[0])
+
 
         # find corresponding sequences
-        with open(input[3], "r") as input_handle, open(output[0], "w") as output_handle:
+        with open(input.seq_file, "r") as input_handle, open(output[0], "w") as output_handle:
             for record in Bio.SeqIO.parse(input_handle, "fasta"):
-                if record.id in tps_ids or record.id in tpsc_ids or record.id in tpsc2_ids:
+                record_id = record.id
+                if record_id in tps_ids or record_id in tpsc_ids or record_id in tpsc2_ids or record_id in sqhopc_ids or record_id in sqhopn_ids or record_id in sqps_ids:
                     Bio.SeqIO.write(record, output_handle, "fasta")
 
 ## CREATING THE FINAL FILE WITH THE PHYTOZOME DATA  
@@ -561,11 +642,17 @@ rule TSA_hmmsearch:
         terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
         terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
         terpene_synth_C2="hmm_profiles/PF19086.hmm",
+        sqhop_cycl_C="hmm_profiles/PF13243.hmm", # Squalene-hopene cyclase C-terminal domain
+        sqhop_cycl_N="hmm_profiles/PF13249.hmm", # Squalene-hopene cyclase N-terminal domain
+        sqps_synth="hmm_profiles/PF00494.hmm", # Squalene/phytoene synthase  
         tsa_chunk="db/TSA/{ID}.{version}_2.pep" 
     output:
         hmm_tps="hmm_results/tsa/hmm_tps_{ID}.{version}.tsv",
         hmm_tpsc="hmm_results/tsa/hmm_tpsc_{ID}.{version}.tsv",
-        hmm_tpsc2="hmm_results/tsa/hmm_tpsc2_{ID}.{version}.tsv"
+        hmm_tpsc2="hmm_results/tsa/hmm_tpsc2_{ID}.{version}.tsv",
+        hmm_sqhopc="hmm_results/tsa/hmm_sqhopc_{ID}.{version}.tsv",
+        hmm_sqhopn="hmm_results/tsa/hmm_sqhopn_{ID}.{version}.tsv",
+        hmm_sqps="hmm_results/tsa/hmm_sqps_{ID}.{version}.tsv"
     log:
         "logs/tsa_hmmsearch_{ID}.{version}.log"
     params:
@@ -577,6 +664,9 @@ rule TSA_hmmsearch:
         hmmsearch --noali --tblout {output.hmm_tps} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth} {input.tsa_chunk} &> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.tsa_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc2} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C2} {input.tsa_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopc} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_C} {input.tsa_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopn} -E {config[e_value_threshold]} --cpu {threads} {input.sqhopn_cycl_N} {input.tsa_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqps} -E {config[e_value_threshold]} --cpu {threads} {input.sqps_synth} {input.tsa_chunk} &>> {log}
         """     
 
 rule TSA_filter:
@@ -584,6 +674,9 @@ rule TSA_filter:
         tps_result="hmm_results/tsa/hmm_tps_{ID}.{version}.tsv",
         tpsc_result="hmm_results/tsa/hmm_tpsc_{ID}.{version}.tsv",
         tpsc2_result="hmm_results/tsa/hmm_tpsc2_{ID}.{version}.tsv",
+        sqhopc_result="hmm_results/tsa/hmm_sqhopc_{ID}.{version}.tsv",
+        sqhopn_result="hmm_results/tsa/hmm_sqhopn_{ID}.{version}.tsv",
+        sqps_result="hmm_results/tsa/hmm_sqps_{ID}.{version}.tsv",
         seq_file="db/TSA/{ID}.{version}_2.pep" 
     output:
         "filtered_results/tsa/{ID}.{version}_filtered.fa"
@@ -598,23 +691,39 @@ rule TSA_filter:
         tps_ids = []
         tpsc_ids = []
         tpsc2_ids = []
-        with open(input[0], "r") as tps_input_handle:
+        sqhopc_ids = []
+        sqhopn_ids = []
+        sqps_ids = []
+        with open(input.tps_result, "r") as tps_input_handle:
             for line in tps_input_handle:
                 if line.startswith('#') == False:
                     tps_ids.append(line.split()[0])
-        with open(input[1], "r") as tpsc_input_handle:
+        with open(input.tpsc_result, "r") as tpsc_input_handle:
             for line in tpsc_input_handle:
                 if line.startswith('#') == False:
                     tpsc_ids.append(line.split()[0])
-        with open(input[2], "r") as tpsc2_input_handle:
+        with open(input.tpsc2_result, "r") as tpsc2_input_handle:
             for line in tpsc2_input_handle:
                 if line.startswith('#') == False:
                     tpsc2_ids.append(line.split()[0])
+        with open(input.sqhopc_result, 'r') as sqhopc_handle:
+            for line in sqhopc_handle:
+                if line.startswith('#') == False:
+                    sqhopc_ids.append(line.split()[0])
+        with open(input.sqhopn_result, 'r') as sqhopn_handle:
+            for line in sqhopn_handle:
+                if line.startswith('#') == False:
+                    sqhopn_ids.append(line.split()[0])
+        with open(input.sqps_result, 'r') as sqps_handle:
+            for line in sqps_handle:
+                if line.startswith('#') == False:
+                    sqps_ids.append(line.split()[0])
 
         # find corresponding sequences
-        with open(input[3], "r") as input_handle, open(output[0], "w") as output_handle:
+        with open(input.seq_file, "r") as input_handle, open(output[0], "w") as output_handle:
             for record in Bio.SeqIO.parse(input_handle, "fasta"):
-                if record.id in tps_ids or record.id in tpsc_ids or record.id in tpsc2_ids:
+                record_id = record.id
+                if record_id in tps_ids or record_id in tpsc_ids or record_id in tpsc2_ids or record_id in sqhopc_ids or record_id in sqhopn_ids or record_id in sqps_ids:
                     Bio.SeqIO.write(record, output_handle, "fasta")
 
 
@@ -741,7 +850,7 @@ rule classify_sequences:
         hmmscan --cpu {threads} --tblout {output.all_results} --noali -o {log} {input.hmm_db} {input.fasta_file} 2> {log}
         awk '!x[$3]++' {output.all_results} > {output.top_results} 2>> {log}
         """
-    
+        
 rule get_class_ids:
     input:
         class_file="TPS_classifications/classification_result_top.tsv"
@@ -810,5 +919,3 @@ rule update_table:
                     output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "tri" + "\t" + "\t".join(line.split('\t')[4:]))
                 else:
                     output_handle.write("\t".join(line.split('\t')[:4]) + "\t" + "-" + "\t" + "\t".join(line.split('\t')[4:]))
-
-

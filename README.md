@@ -7,6 +7,14 @@ Snakemake pipeline to mine terpene synthase sequences from databases
 * 1KP
 * TSA
 
+## Current Pfam HMMs
+* [PF01397](https://pfam.xfam.org/family/PF01397) (Terpene synthase, N-terminal domain)
+* [PF03936](https://pfam.xfam.org/family/PF03936) (Terpene synthase family, metal binding domain)
+* [PF19086](https://pfam.xfam.org/family/PF19086) (Terpene synthase family 2, C-terminal metal binding)
+* [PF13243](https://pfam.xfam.org/family/PF13243) (Squalene-hopene cyclase C-terminal domain)
+* [PF13249](https://pfam.xfam.org/family/PF13249) (Squalene-hopene cyclase N-terminal domain)
+* [PF00494](https://pfam.xfam.org/family/PF00494) (Squalene/phytoene synthase)
+
 ## Packages
 
 * snakemake
@@ -16,7 +24,6 @@ Snakemake pipeline to mine terpene synthase sequences from databases
 * transdecoder
 * dplyr
 * ggplot2
-* mechanize
 
 ## How to run it
 ###
@@ -49,9 +56,12 @@ TPS
 │   ├── uniparc/                      - contains uniparc_active.fasta.gz file
 │   └── uniparc_chunks/               - split uniparc_active.fasta.gz 
 ├── hmm_profiles
-│   ├── PF01397.hmm
-│   ├── PF03936.hmm
-│   └── PF19086.hmm
+│   ├── PF01397.hmm (Terpene synthase, N-terminal domain)
+│   ├── PF03936.hmm (Terpene synthase family, metal binding domain)
+|   ├── PF19086.hmm (Terpene synthase family 2, C-terminal metal binding)
+|   ├── PF13243.hmm (Squalene-hopene cyclase C-terminal domain)
+|   ├── PF13249.hmm (Squalene-hopene cyclase N-terminal domain)
+│   └── PF00494.hmm (Squalene/phytoene synthase)
 ├── hmm_results                       - contains results of hmmsearch on all files 
 │   ├── 1kp/
 │   ├── phytozome/

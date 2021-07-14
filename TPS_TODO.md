@@ -41,6 +41,31 @@
     * positions of where the  domain starts and ends corresponds to `envfrom, env to` in the output
     * how big part of the hmm was used corresponds to `hmmfrom  hmm to` in the output, that is the criteria based on which the filtering will be made (tells if the domain is complete)
         * one can find full length of the pfam model on the web of Pfam
+            * PF01397
+                * full length: 192
+                * average length: 162.70
+                * average coverage of the sequence by the domain: 31.19 %
+            * PF03936
+                * full length: 267
+                * average length: 200.00
+                * average coverage of the sequence by the domain: 43.13 %
+            * PF19086
+                * full length: 199
+                * average length: 186.00
+                * average coverage of the sequence by the domain: 46.25 %
+            * PF13243
+                * full length: 319
+                * average length: 280.90
+                * average coverage of the sequence by the domain: 44.12 %
+            * PF13249
+                * full length: 291
+                * average length: 270.10
+                * average coverage of the sequence by the domain: 40.48 %
+            * PF00494
+                * full length: 263
+                * average length: 252.80
+                * average coverage of the sequence by the domain: 74.27 %
+
         * if `hmmfrom and hmm to` is the same as the length, then the domain is complete
         * otherwise have to decide...
     * IF sequence contains at least one complete domain -> complete (however sequence containing just a single domain may not be functional)

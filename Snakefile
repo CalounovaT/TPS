@@ -665,7 +665,7 @@ rule TSA_hmmsearch:
         hmmsearch --noali --tblout {output.hmm_tpsc} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C} {input.tsa_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_tpsc2} -E {config[e_value_threshold]} --cpu {threads} {input.terpene_synth_C2} {input.tsa_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_sqhopc} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_C} {input.tsa_chunk} &>> {log}
-        hmmsearch --noali --tblout {output.hmm_sqhopn} -E {config[e_value_threshold]} --cpu {threads} {input.sqhopn_cycl_N} {input.tsa_chunk} &>> {log}
+        hmmsearch --noali --tblout {output.hmm_sqhopn} -E {config[e_value_threshold]} --cpu {threads} {input.sqhop_cycl_N} {input.tsa_chunk} &>> {log}
         hmmsearch --noali --tblout {output.hmm_sqps} -E {config[e_value_threshold]} --cpu {threads} {input.sqps_synth} {input.tsa_chunk} &>> {log}
         """     
 

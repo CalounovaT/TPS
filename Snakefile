@@ -483,7 +483,7 @@ checkpoint phytozome_hmmsearch:
         hmm_tpsc2="hmm_results/phytozome/hmm_tpsc2_{index}.tsv",#,
         hmm_sqhopc="hmm_results/phytozome/hmm_sqhopc_{index}.tsv",
         hmm_sqhopn="hmm_results/phytozome/hmm_sqhopn_{index}.tsv",
-        hmm_sqps="hmm_results.phytozome/hmm_sqps_{index}.tsv"
+        hmm_sqps="hmm_results/phytozome/hmm_sqps_{index}.tsv"
     log:
         "logs/phytozome_hmmsearch_{index}.log"
     params:

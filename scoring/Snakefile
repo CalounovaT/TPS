@@ -1,0 +1,734 @@
+import os
+import subprocess
+import urllib.parse
+import urllib.request
+import Bio.SeqIO
+from itertools import groupby
+import re
+
+
+localrules: all, create_subset_files, combine_distances
+rule all:
+     input:
+        'tps_tree_di_sesq_mafft_gappyout_renamed_fasttree._no_semicolonstree.tree',
+        'characterized_header_ids.txt',
+        'tree_unchar_distances.txt',
+        "hmm_profiles/PF01397.hmm",
+        "hmm_profiles/PF03936.hmm",
+        "hmm_profiles/PF19086.hmm",
+        "hmm_profiles/PF13243.hmm",
+        "hmm_profiles/PF13249.hmm",
+        "hmm_profiles/PF00494.hmm",
+        "TPS_classifications/classification_result_top.tsv",
+        "results/final.fasta",
+        "pfam_architecture_hmmscan.out",
+        "pfam_architecture_hmmscan.tsv",
+        "pfam_architecture_hmmscan.tsv.arch",
+        "combined_results.tsv",
+        "scored_candidates.tsv"
+
+rule combine_char_unchar_sequences:
+    """
+    Combines characterized sesqTPS and diTPS from TPSdb with all mined sequences
+    """
+    input:
+        mined_sequences = 'tps_mining.fasta',
+        characterized_sequences = 'tps_characterized.fasta'
+    output:
+        merged_sequences = 'tps_merged.fasta'
+    shell:
+        """
+        cat {input.mined_sequences} {input.characterized_sequences} > {output.merged_sequences}
+        """
+
+rule msa:
+    """
+    Creates a MSA using MAFFT
+    """
+    input:
+        sequences = 'tps_merged.fasta'
+    output:
+        msa = 'tps_merged_aligned.fasta'
+    log:
+        'logs/msa.log'
+    params:
+        memory="100"
+    threads:
+        20
+    shell:
+        """
+        mafft --thread {threads} --threadtb 5 --threadit 0 --reorder --large --retree 1 {input.sequences} > {output.msa}
+        """
+
+rule trim_msa:
+    """
+    Trimms the MSA using trimAl
+    """
+    input:
+        msa = 'tps_merged_aligned.fasta'
+    output:
+        trimmed_msa = 'tps_merged_aligned_trimmed_gappyout.fasta'
+    log:
+        'logs/trim_msa.log'
+    params:
+        memory="100"
+    threads:
+        1
+    shell:
+        """
+        trimal -in {input.msa} -out {output.trimmed_msa} -fasta -gappyout
+        """
+
+rule phylo_tree:
+    """
+    Creates a phylogenetic tree using FastTree2
+    """
+    input:
+        trimmed_msa = 'tps_merged_aligned_trimmed_gappyout.fasta'
+    output:
+        tree = 'tps_tree_di_sesq_mafft_gappyout_fasttree.tree'
+    log:
+        'logs/phylo_tree.log'
+    params:
+        memory="100"
+    threads:
+        1
+    shell:
+        """
+        fasttree -fastest {input.trimmed_msa} > {output.tree}
+        """
+
+rule rename_tree:
+    """
+    Renames sequences with the same name (ID) in the tree
+    """
+    input:
+        tree = 'tps_tree_di_sesq_mafft_gappyout_fasttree.tree'
+    output:
+        renamed_tree = 'tps_tree_di_sesq_mafft_gappyout_renamed_fasttree.tree'
+    log:
+        'logs/rename_tree.log'
+    params:
+        memory="100"
+    threads:
+        1
+    shell:
+        """
+        seqkit rename {input.tree} > {output.renamed_tree}
+        """
+
+rule remove_semicolons:
+    """
+    Removes semicolons from the header of the tree
+    """
+    input:
+        tree = 'tps_tree_di_sesq_mafft_gappyout_renamed_fasttree.tree'
+    output:
+        no_semicolons_tree = 'tps_tree_di_sesq_mafft_gappyout_renamed_fasttree._no_semicolonstree.tree'
+    log:
+        'logs/remove_semicolons.log'
+    params:
+        memory="100"
+    threads:
+        1
+    shell:
+        """
+        sed -i 's/;/ /g' {input.tree} > {output.no_semicolons_tree}
+        """
+
+rule create_subset_files:
+    output:
+        subset_file = 'files/subset_{index}.txt'
+    log:
+        'logs/create_subset_files_{index}.log'
+    shell:
+        """
+        mkdir -p files
+        for i in `seq 0 3830`
+        do
+            touch files/subset_$i.txt
+        done
+        """
+
+rule compute_distances:
+    input:
+        tree = 'tps_tree_di_sesq_mafft_gappyout_renamed_fasttree._no_semicolonstree.tree',
+        char_ids = 'characterized_header_ids.txt',
+        subset_file = 'files/subset_{index}.txt'
+    output:
+        dist_file = 'tree_distances/tree_distances_{index}.txt'
+    log:
+        'logs/compute_distances_{index}.log'
+    params:
+        memory="4"
+    threads:
+        1
+    run:
+        from Bio import Phylo
+        # load the tree object
+        tree = Phylo.read(input["tree"], 'newick')
+
+        # get the terminal nodes
+        terminals = tree.get_terminals()
+        print('number of nodes', len(terminals))
+
+        for t in terminals:
+            t.comment=None
+        
+        with open('test/test_'+str(wildcards["index"]), 'w') as f:
+            f.write('ok')
+        
+        # get IDs of characterized sequences
+        ids_file = input["char_ids"]
+        in_file =  open(ids_file, 'r')
+        lines = in_file.readlines()
+        char_ids = [line.strip() for line in lines]
+        print('number of characterized sequences:', len(char_ids))
+
+        # find corresponding nodes and put in their comment that they're characterized
+        char_nodes = []
+        for char_id in char_ids:
+            print('Char ID:', char_id)
+            char_id = "\|".join(char_id.split('|')) # because Phylo understands string as a regex
+            char_id_filter = tree.find_elements(name=char_id, terminal=True)
+            char_nodes_list = list(char_id_filter)
+            char_nodes_list[0].comment='characterized'
+            char_nodes.append(char_nodes_list[0])
+
+        #get the noncharacterized terminal nodes
+        unchar_nodes_filter = tree.find_elements(comment=None, terminal=True)
+        unchar_nodes = list(unchar_nodes_filter)
+        unchar_nodes = sorted(unchar_nodes, key=lambda x: x.name)
+
+        # use only corresponding subset
+        i = int(wildcards["index"])
+        unchar_nodes = unchar_nodes[i*50:(i+1)*50]
+
+        # count their distances to all other characterized tps and keep the shortest distance
+        with open(output["dist_file"], 'w') as out_file:
+            out_file.write('uncharacterized tps' + '\t' + 'closest characterized tps' + '\t' + 'distance' + '\n')
+            for unchar_node in unchar_nodes:
+                distances = [(unchar_node.name, char_node.name, tree.distance(unchar_node, char_node)) for char_node in char_nodes]
+                distances = sorted(distances, key=lambda x: x[-1])
+                max_dist = distances[0]
+                unchar_name, char_name, distance = max_dist
+                out_file.write(unchar_name + '\t' + char_name + '\t' + str(distance) +'\n')
+
+rule combine_distances:
+    input:
+        expand("tree_distances/tree_distances_{index}.txt", index=range(0,3829))
+    output:
+        'tree_unchar_distances.txt'
+    run:
+        with open(output[0], 'w') as out_file:
+            out_file.write('uncharacterized tps' + '\t' + 'closest characterized tps' + '\t' + 'distance' + '\n')
+            for dist_file in input:
+                with open(dist_file, 'r') as in_file:
+                    in_file.readline()
+                    for line in in_file:
+                        out_file.write(line)
+
+# PREDICT TERPENE TYPES
+
+## PREPARE DATABASE OF "terzyme" HMMs
+rule create_hmm_db:
+    input:
+        di_hmm = "TPS_classes_hmms/di_clustalw.hmm",
+        mono_hmm = "TPS_classes_hmms/mono_clustalw.hmm",
+        sesq_hmm = "TPS_classes_hmms/sesq_clustalw.hmm",
+        tri_hmm = "TPS_classes_hmms/tri_clustalw.hmm"
+    output:
+        hmm_db = "TPS_classes_hmms/hmm_db_clustalw.hmm"
+    log:
+        "logs/create_hmm_db.log"
+    params:
+        memory="1"
+    threads:
+        1
+    shell:
+        """
+        cat {input.di_hmm} {input.mono_hmm} {input.sesq_hmm} {input.tri_hmm} > {output.hmm_db} 2> {log}
+        hmmpress {output.hmm_db} &>> {log}
+        """
+
+## CLASSIFY THE SEQUENCES INTO CLASSES (mono/sesqui/di/tri TPS)
+rule classify_sequences:
+    input:
+        fasta_file="tps_mining.fasta",
+        hmm_db="TPS_classes_hmms/hmm_db_clustalw.hmm"
+    output:
+        all_results="TPS_classifications/classification_result.tsv",
+        top_results="TPS_classifications/classification_result_top.tsv"
+    log:
+        "logs/classify_sequences.log"
+    params:
+        memory="5"
+    threads:
+        16
+    shell:
+        """
+        mkdir -p TPS_classifications
+        hmmscan --cpu {threads} --tblout {output.all_results} --noali -o {log} {input.hmm_db} {input.fasta_file} 2> {log}
+        awk '!x[$3]++' {output.all_results} > {output.top_results} 2>> {log}
+        """
+
+# GET PFAM DOMAIN ARCHITECTURE
+
+## DOWNLOAD THE PFAM HMM PROFILES
+rule download_hmmprofiles:
+    output:
+        terpene_synth="hmm_profiles/PF01397.hmm", # Terpene_synth (PF01397)
+        terpene_synth_C="hmm_profiles/PF03936.hmm", # Family: Terpene_synth_C (PF03936)
+        terpene_synth_C2="hmm_profiles/PF19086.hmm", # Family: Terpene_syn_C_2 (PF19086)
+        sqhop_cycl_C="hmm_profiles/PF13243.hmm", # Squalene-hopene cyclase C-terminal domain
+        sqhop_cycl_N="hmm_profiles/PF13249.hmm", # Squalene-hopene cyclase N-terminal domain
+        sqps_synth="hmm_profiles/PF00494.hmm" # Squalene/phytoene synthase 
+    log:
+        "logs/download_hmmprofiles.log"
+    params:
+        memory="2"
+    threads:
+        1
+    shell:
+        """
+        wget -O hmm_profiles/PF01397.hmm "http://pfam.xfam.org/family/PF01397/hmm" &> {log}
+        wget -O hmm_profiles/PF03936.hmm "http://pfam.xfam.org/family/PF03936/hmm" &>> {log}
+        wget -O hmm_profiles/PF19086.hmm "http://pfam.xfam.org/family/PF19086/hmm" &>> {log}
+        wget -O hmm_profiles/PF13243.hmm "http://pfam.xfam.org/family/PF13243/hmm" &>> {log}
+        wget -O hmm_profiles/PF13249.hmm "http://pfam.xfam.org/family/PF13249/hmm" &>> {log}
+        wget -O hmm_profiles/PF00494.hmm "http://pfam.xfam.org/family/PF00494/hmm" &>> {log}
+        """
+
+## PREPARE DATABASE OF PFAM HMM PROFILES
+rule create_pfam_db:
+    input:
+        PF01397="hmm_profiles/PF01397.hmm",
+        PF03936="hmm_profiles/PF03936.hmm",
+        PF19086="hmm_profiles/PF19086.hmm",
+        PF13243="hmm_profiles/PF13243.hmm",
+        PF13249="hmm_profiles/PF13249.hmm",
+        PF00494="hmm_profiles/PF00494.hmm"
+    output:
+        db="hmm_profiles/db.hmm"
+    log:
+        "logs/create_pfam_db.log"
+    params:
+        memory="1"
+    threads:
+        1
+    shell:
+        """
+        cat {input.PF01397} {input.PF03936} {input.PF19086} {input.PF13243} {input.PF13249} {input.PF00494} > {output.db} 2> {log}
+        hmmpress {output.db} 2>> {log}
+        """
+
+## GET THE PFAM DOMAIN ARCHITECTURE
+rule get_hmm_architecture:
+    input:
+        fasta="tps_mining.fasta",
+        db="hmm_profiles/db.hmm"
+    output:
+        out="pfam_architecture_hmmscan.out",
+        tsv="pfam_architecture_hmmscan.tsv",
+        arch="pfam_architecture_hmmscan.tsv.arch"
+    log:
+        "logs/get_architecture.log"
+    params:
+        memory="1"
+    threads:
+        16
+    shell:
+        """
+        hmmscan -o {output.out} --domtblout {output.tsv} --cpu {threads} {input.db} {input.fasta} 2> {log}
+
+        ./hmmscan_parse.py --file {output.tsv}
+        """
+
+# COMBINE ALL RESULTS
+rule combine_results:
+    input:
+        arch="pfam_architecture_hmmscan.tsv.arch",
+        types="TPS_classifications/classification_result_top.tsv",
+        distances='tree_unchar_distances.txt'
+    output:
+        combined="combined_results.tsv"
+    log:
+        "logs/combine_results.log"
+    params:
+        memory="1"
+    threads:
+        1
+    run:
+        with open(input["arch"],'r') as arch_file, open(input["types"], 'r') as type_file, open(input["distances"], 'r') as dist_file, open(output["combined"], 'w') as out_file:
+
+            dist_lines = [line.strip() for line in dist_file.readlines()]
+            type_lines = [line.strip() for line in type_file.readlines()]
+
+            # get the ids from the distnces file:
+            ids = [l.split('\t')[0] for l in dist_lines if l.startswith('uncharacterized tps')==False]
+
+            # initilize the dictionary
+            info = dict.fromkeys(ids, (None,None, None, None))
+            #print(info['108133'])
+
+            # add the distance and closest node id
+            for line in dist_lines:
+                if line.startswith('uncharacterized tps'):
+                    continue
+                seq_id, closest_id, seq_distance = line.split('\t')
+                info[seq_id] = (seq_distance, closest_id, None, None)
+            
+            # add the type
+            for line in type_lines:
+                if line.startswith('#'):
+                    continue
+                tps_type,_ , seq_id,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_ = line.split()
+
+                if tps_type == 'sesq_clustalw':
+                    tps_type = 'sesq'
+                elif tps_type == 'tri_clustalw':
+                    tps_type = 'tri'
+                elif tps_type == 'di_clustalw':
+                    tps_type = 'di'
+                elif tps_type == 'mono_clustalw':
+                    tps_type = 'mono'
+                if seq_id in ids:
+                    seq_distance,closest_id,_,_ = info[seq_id]
+                    info[seq_id]= (seq_distance, closest_id, tps_type, None)
+                else:
+                    print(seq_id, '(in types file) not in ids')
+
+            # add the architecture
+            for line in arch_file:
+                if line.startswith('#'):
+                    continue
+                seq_id, arch = line.split('\t')
+                if seq_id in ids:
+                    seq_distance, closest_id, tps_type, _ = info[seq_id]
+                    info[seq_id] = (seq_distance, closest_id, tps_type, arch)
+                else:
+                    print(seq_id, '(in arch file) not in ids')
+                #info[seq_id] = (seq_distance, tps_type, arch)
+
+            # write the output
+            for seq_id, value in info.items():
+                seq_distance, closest_id, tps_type, arch = value
+                out_file.write("{}\t{}\t{}\t{}\t{}\n".format(seq_id, str(seq_distance),closest_id, tps_type, arch)) 
+
+# SCORE THE CANDIDATES
+rule score_candidates:
+    input:
+        combined="combined_results.tsv",
+        mining_fasta="tps_mining.fasta"
+    output:
+        scored="scored_candidates.tsv"
+    log:
+        "logs/score_candidates.log"
+    params:
+        memory="1"
+    threads:
+        1
+    run:
+        from Bio import SeqIO
+
+        with open(input["combined"], "r") as in_file, open(output["scored"],'w') as out_file, open(input["mining_fasta"], 'r') as fasta_file:
+            fasta_dict = dict()
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                fasta_dict[record.id] = [len(record.seq), str(record.seq)[0]=='M']
+
+            entries = [line.strip().split('\t') for line in in_file.readlines()]
+            #print(entries[0], entries[1], entries[2], entries[3])
+            ids = [e[0] for e in entries if e != ['']]
+            distances = [float(e[1]) for e in entries if e != ['']]
+            closest_ids = [e[2] for e in entries if e != ['']]
+            types = [e[3] for e in entries if e != ['']]
+            architectures = [e[4] for e in entries if e != ['']]
+
+            # get the scores for completeness
+            completeness_scores = []
+            for seq_id in ids:
+                if seq_id in fasta_dict.keys():
+                    completeness_scores.append(int(fasta_dict[seq_id][1]))
+                else:
+                    completeness_scores.append(0)
+            #print(completeness_scores[:10])
+
+            # get the scores for length
+            length_scores = []
+            lengths = []
+            for seq_id in ids:
+
+                if seq_id in fasta_dict.keys():
+                    length = fasta_dict[seq_id][0]
+                    lengths.append(length)
+                    # SESQUITERPNES
+                    if types[ids.index(seq_id)] == 'sesq':
+                        if length >= 500 and length <= 700:
+                            length_scores.append(1)
+                        elif length >= 700 and length <= 900:
+                            length_scores.append(0.2)
+                        elif length>=250 and length <= 500:
+                            length_scores.append(0.6)
+                        elif length > 200:
+                            length_scores.append(0.1)
+                        else:
+                            length_scores.append(0)
+
+                    # DITERPENES
+                    elif types[ids.index(seq_id)] == 'di':
+                        if length >= 650 and length <= 900:
+                            length_scores.append(1)
+                        elif length >= 450 and length <=700:
+                            length_scores.append(0.75)
+                        elif length > 900 and length <= 1200:
+                            length_scores.append(0.5)
+                        elif length > 200:
+                            length_scores.append(0.1)
+                        else:
+                            length_scores.append(0)
+                    # OTHER OR UNKNOWN TYPE
+                    else:
+                        # if length is in one of the range of sesq or di, its ok, otherwise 0
+                        if length >= 500 and length <= 700:
+                            length_scores.append(0.7)
+                        elif length >= 700 and length <= 900:
+                            length_scores.append(0.2)
+                        elif length>=250 and length <= 500:
+                            length_scores.append(0.5)
+                        elif length >= 650 and length <= 900:
+                            length_scores.append(0.7)
+                        elif length >= 450 and length <=700:
+                            length_scores.append(0.6)
+                        elif length > 900 and length <= 1200:
+                            length_scores.append(0.4)
+                        elif length > 200:
+                            length_scores.append(0.1)
+                        else:
+                            length_scores.append(0)
+                else:
+                    length_scores.append(0)
+                    lengths.append(0)
+
+            # get the scores for distances
+            max_dist = max(distances)
+            min_dist = min(distances)
+            normalized_distances = [(d-min_dist)/(max_dist-min_dist) for d in distances]
+            
+            # get the scores for types
+            type_scores = [1 if type == 'di' or type == 'sesq' else 0 for type in types]
+
+            # get the scores for architectures
+            arch_scores = []
+            for arch, i in zip(architectures, range(len(architectures))):
+                # DITERPENES
+                if types[i] == 'di':
+
+                    # most common architectures
+                    if arch == "['PF01397.24', 'PF03936.19']":
+                        arch_scores.append(1)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19']":
+                        arch_scores.append(1)
+
+                    # not common but observed architectures
+                    elif arch == "['PF19086.3']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF19086.3']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF13243.9', 'PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF13243.9']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF13249.9', 'PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF13243.9', 'PF01397.24', 'partial_PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF13243.9', 'partial_PF13243.9']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF19086.3', 'partial_PF19086.3']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF03936.19']":
+                        arch_scores.append(0.5)
+
+                    # not observed architectures
+                    else:
+                        arch_scores.append(0)
+                
+                # SESQUITERPENES
+                elif types[i] == 'sesq':
+                    # most common architectures
+                    if arch == "['PF01397.24', 'PF03936.19']":
+                        arch_scores.append(1)
+                    elif arch == "['PF19086.3']":
+                        arch_scores.append(1)
+
+                    # not common but observed architectures
+                    elif arch == "['partial_PF19086.3']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF01397.24', 'partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF19086.3', 'PF19086.3']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19', 'partial_PF19086.3']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19']":
+                        arch_scores.append(0.5)
+
+                    # not observed architectures
+                    else:
+                        arch_scores.append(0)
+                
+                # OTHER TYPE OR UKNOWN TYPE
+                else:
+                    # most common architectures of sesqui and diterpenes
+                    if arch == "['PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.5)
+                    elif arch == "['PF19086.3']":
+                        arch_scores.append(0.5)
+                    
+                    # not common but observed architectures of sesqui and diterpenes
+                    elif arch == "['partial_PF19086.3']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF01397.24', 'partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF19086.3', 'PF19086.3']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19', 'partial_PF19086.3']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF19086.3']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF01397.24', 'partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['partial_PF01397.24', 'PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF19086.3', 'PF19086.3']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19', 'partial_PF19086.3']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+                    elif arch == "['PF01397.24', 'partial_PF03936.19']":
+                        arch_scores.append(0.25)
+
+                    # not observed architectures
+                    else:
+                        arch_scores.append(0)
+
+            # get total candidate score (without yet using information about sequence length and starting M)
+            entries_list = []
+            for i in range(len(ids)):
+                total_score = arch_scores[i] + type_scores[i] + (2*normalized_distances[i]) + completeness_scores[i] + length_scores[i]
+                entries_list.append([ids[i], distances[i], closest_ids[i], types[i], architectures[i], completeness_scores[i], length_scores[i], total_score, lengths[i]])
+            entries_list = sorted(entries_list, key=lambda x: x[7], reverse=True)
+            
+            # write the output file:
+            out_file.write('ID\tLength\tDistance\tType\tArchitecture\tStarts with M\tLength score\tTotal_score\n')
+            for e in entries_list:
+                out_file.write(e[0] + '\t' + str(e[8]) + '\t' + str(e[1]) + '\t' + e[2] + '\t' + e[3] + '\t' + str(e[4]) + '\t' + str(e[5]) + '\t' + str(e[6]) + '\t' + str(e[7]) + '\n')
+        
+# LOAD ADDITIONAL INFORMATION
+rule annotate_candidates:
+    input:
+        in_tsv_table="scored_candidates.tsv",
+        mining_output="final.tsv",
+        tps_db="tps_db.tsv"
+    output:
+        out_tsv_table="annotated_scored_candidates.tsv"
+    log:
+        "logs/annotate_candidates.log"
+    params:
+        memory="1"
+    threads:
+        1
+    run:
+        import pandas as pd
+
+        # load the scored candidates table
+        candidates_df = pd.read_csv(input["in_tsv_table"], sep='\t', header=None, skiprows=1)
+        candidates_df.columns = ['ID', 'Length', 'Distance', 'Closest annotated tree node', 'Type', 'Architecture', 'Starts with M', 'Length score', 'Total_score']
+
+        # load the mining output table
+        mining_df = pd.read_csv(input["mining_output"], sep='\t')
+
+        # load the tps database
+        tps_df = pd.read_csv(input["tps_db"], sep='\t', header=0)
+
+        # for the mining df, keep only ID and Specie columns
+        mining_df = mining_df.iloc[:, [0,2]]
+        mining_df.columns = ['ID', 'Specie']
+
+        # for the tps df, keep ID, name, type columns
+        tps_df = tps_df.iloc[:, [0,1,5]]
+        tps_df.columns = ['ID', 'Name', 'Type']
+
+        print('Original tps df','\n',tps_df.loc[tps_df['ID'] == 'A0A0C3FBR2'])
+
+        # for every candidate, get corresponding specie
+        candidates_df = pd.merge(candidates_df, mining_df, on="ID", how='left')
+
+        # in the candidates df, for the closest annotated tree node, cut it so it does not contains prefix and suffix after the '|' character
+        candidates_df["Closest annotated tree node"] = candidates_df["Closest annotated tree node"].apply(lambda x: x.split('|')[1])
+
+        tps_df_uniq_names = tps_df.drop_duplicates(subset=['ID'])[['ID', 'Name']]
+        print('Unique names tps df','\n',tps_df_uniq_names.loc[tps_df['ID'] == 'A0A0C3FBR2'])
+        tps_df_uniq_types = tps_df.groupby(['ID'])['Type'].apply(set).reset_index()
+        tps_df_uniq_types = tps_df_uniq_types.apply(list)
+        tps_df_uniq_types.columns = ['ID', 'Type']
+        print(tps_df_uniq_types.dtypes)
+        print(tps_df_uniq_types.loc[tps_df_uniq_types['ID'] == 'A0A0C3FBR2'])
+        tps_df_2 = pd.merge(tps_df_uniq_names, tps_df_uniq_types, on='ID')
+        print(tps_df_2.loc[tps_df['ID'] == 'A0A0C3FBR2'])
+
+        # now in the candidates df, for the closest annotated tree node, get the corresponding name and type
+        # note: One tps can have more types
+        candidates_df = pd.merge(candidates_df, tps_df_2, left_on="Closest annotated tree node", right_on="ID", how='left')
+        
+ 
+        candidates_df = candidates_df[["ID_x", "Specie","Length", "Distance", "Closest annotated tree node", "Name","Type_y", "Type_x", "Architecture", "Starts with M", "Length score","Total_score" ]]
+        candidates_df.columns=["ID", "Specie", "Length", "Distance", "ID (Closest annotated tree node)", "Name (Closest annotated tree node)", "Type (Closest annotated tree node)", "Type (predicted)", "Architecture", "Starts with M", "Length score","Total_score"]
+        
+        # sort based on total score
+        #candidates_df = candidates_df.sort_values(by=['Total_score'], ascending=False)
+        candidates_df.to_csv(output["out_tsv_table"], sep='\t', index=False, header=True)
+
+
+
